@@ -20,7 +20,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -DNDEBUG")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s")
     
-    # Avoid console window when running Windows GUI application (optional, but standard for release)
+    # Avoid console window when running Windows GUI application
     set(GUI_TYPE WIN32)
 else()
     set(GUI_TYPE "")
@@ -34,12 +34,16 @@ set(CMAKE_AUTORCC ON)
 # Include paths
 include_directories(include)
 
-# Find OpenCV
+# Configure OpenCV 4.9.0 (MinGW)
+set(OpenCV_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../FRMIS_C/OpenCV4.9.0_mingw")
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
-# Find Qt5 Components
-find_package(Qt5 REQUIRED COMPONENTS Core Widgets Gui)
+# Configure Qt6 6.5.3 MinGW library path
+list(PREPEND CMAKE_PREFIX_PATH "D:/tools_app/Qt/6.5.3/mingw_64")
+
+# Find Qt6 Components
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 
 # Gather source files
 set(SOURCES
@@ -70,17 +74,20 @@ set(HEADERS
 # Define executable
 add_executable(${PROJECT_NAME} ${GUI_TYPE} ${SOURCES} ${HEADERS})
 
+# Define target compile definitions
+target_compile_definitions(${PROJECT_NAME} PRIVATE FRMIS_STATIC NDEBUG)
+
 # Link libraries
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
     ${OpenCV_LIBS}
-    Qt5::Core
-    Qt5::Widgets
-    Qt5::Gui
+    Qt6::Core
+    Qt6::Widgets
+    Qt6::Gui
 )
 
 # Installation details or post-build feedback
-message(STATUS "Project ${PROJECT_NAME} configured successfully.")
+message(STATUS "Project ${PROJECT_NAME} configured successfully with Qt6.")
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "OpenCV version: ${OpenCV_VERSION}")
 message(STATUS "OpenCV libraries: ${OpenCV_LIBS}")
