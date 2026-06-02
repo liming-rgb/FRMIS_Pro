@@ -1,4 +1,4 @@
-# 🔬 FRMIS Stitcher Pro
+# 🔬 FRMIS Pro
 
 [![C++](https://img.shields.io/badge/Language-C%2B%2B17-blue.svg?style=flat-square)](https://en.cppreference.com/w/cpp/17)
 [![Qt](https://img.shields.io/badge/Framework-Qt%206.5.3%20(MinGW)-green.svg?style=flat-square)](https://www.qt.io/)
@@ -6,7 +6,7 @@
 [![CMake](https://img.shields.io/badge/Build-CMake%203.16%2B-red.svg?style=flat-square)](https://cmake.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2064--bit-lightgrey.svg?style=flat-square)](https://microsoft.com/windows)
 
-**FRMIS Stitcher Pro** 是一款专为高分辨率、多通道生物医学显微图像设计的高性能 **2D 格栅无缝拼接系统**。
+**FRMIS Pro** 是一款专为高分辨率、多通道生物医学显微图像设计的高性能 **2D 格栅无缝拼接系统**。
 
 本软件由 C++17 与 Qt6.5.3 强力驱动，在底层深度融合了高性能的 **OpenCV 4.9.0** 图像处理算法。软件彻底剥离了复杂的命令行，为科研人员提供了一个直观的、全图形化（GUI）的沉浸式交互工作台。
 
@@ -19,11 +19,11 @@
 ### 📚 学术引用与致谢
 本项目的 C++ 算法底层实现参考自以下经典的显微拼接学术成果：
 > **Mohammadi, F. S., Shabani, H. & Zarei, M. "Fast and robust feature-based stitching algorithm for microscopic images." *Sci Rep* 14, 13309 (2024).**  
-> 🔗 [Nature 官方论文链接](https://www.nature.com/articles/s41598-024-63309-8) | [labCOI 官方 MATLAB 源码仓库](https://github.com/labCOI/FRMIS)
+> 🔗 [Nature 官方论文链接](https://www.nature.com/articles/s41598-024-61970-y) | [labCOI 官方 MATLAB 源码仓库](https://github.com/labCOI/FRMIS)
 
 ### 📊 优化对比：MATLAB 原作 vs FRMIS Stitcher Pro
 
-我们的 C++ 版本在工程可用性、运行效率以及人机交互上实现了全方位的超越与升级：
+我们的 C++ 版本在工程可用性、运行效率以及人机交互上实现了全方位的升级与优化：
 
 | 对比维度 | 🔬 MATLAB 原作 (Reference) | ⚡ FRMIS Stitcher Pro (Our C++ Optimized) |
 | :--- | :--- | :--- |
@@ -38,7 +38,7 @@
 ## 📂 项目目录结构
 
 ```text
-FRMIS_Release/
+FRMIS_Pro/
 ├── CMakeLists.txt              # CMake 统一构建配置文件 (配置 Qt6 与 OpenCV4.9.0 路径)
 ├── FRMIS-UI-design.md          # 软件详细交互与架构规格说明书
 ├── README.md                   # 本说明书
@@ -71,7 +71,7 @@ FRMIS_Release/
 ### 🌀 1. 使用 Windows PowerShell 编译
 
 打开 PowerShell 终端，定位至 `FRMIS_Release` 根目录下，运行以下指令：
-
+注：请将 `D:\tools_app` 替换为实际安装目录，CMakeLists.txt 中配置的路径请根据实际情况修改。
 ```powershell
 # 1. 临时将配套的 MinGW 编译器加入 PATH
 $env:PATH = "D:\tools_app\Qt\Tools\mingw1120_64\bin;" + $env:PATH
