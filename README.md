@@ -17,9 +17,9 @@
 本软件的 C++ 算法逻辑参考并借鉴了经典显微拼接学术论文 **FRMIS** 及其官方公开的 MATLAB 源码实现。我们对其底层算法进行了颠覆性的 **C++ 高性能重构**，并针对多项显微拼接实际应用痛点，开发了全套的 **Qt6 交互式工作台与高深度图像渲染引擎**。
 
 ### 📚 学术引用与致谢
-如果您在学术研究中使用了本软件，请同时致谢并引用 FRMIS 原作论文：
-> **M. Shihan, et al. "FRMIS: A novel grid stitching method for multi-tile microscope images." (Reference Paper)**  
-> 🔗 [MATLAB 原创官方源码与论文参考]
+本项目的 C++ 算法底层实现参考自以下经典的显微拼接学术成果：
+> **Shihan, M., et al. "Fast and robust feature-based stitching algorithm for microscopic images."**  
+> 🔗 [原论文与官方 MATLAB 源码参考]
 
 ### 📊 优化对比：MATLAB 原作 vs FRMIS Stitcher Pro
 
