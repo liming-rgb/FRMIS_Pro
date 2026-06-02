@@ -18,7 +18,7 @@
 
 ### 📚 学术引用与致谢
 本项目的 C++ 算法底层实现参考自以下经典的显微拼接学术成果：
-> **Mohammadi, F. S., Shabani, H. & Zarei, M. "Fast and robust feature-based stitching algorithm for microscopic images." *Sci Rep* 14, 13309 (2024).**  
+> **Mohammadi, F. S., Shabani, H. & Zarei, M. "Fast and robust feature-based stitching algorithm for microscopic images." *Sci Rep* 14, 13304 (2024).**  
 > 🔗 [Nature 官方论文链接](https://www.nature.com/articles/s41598-024-61970-y) | [labCOI 官方 MATLAB 源码仓库](https://github.com/labCOI/FRMIS)
 
 ### 📊 优化对比：MATLAB 原作 vs FRMIS Stitcher Pro
