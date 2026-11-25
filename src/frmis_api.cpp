@@ -78,7 +78,7 @@ int RunStitchingPipeline(const StitchingParams* params) {
 
     int width = params->width;
     int height = params->height;
-    int img_num = params->img_num > 0 ? params->img_num : (width * height);
+    int img_num = width * height;
     int sort_type = params->sort_type;
     
     // 根据模态自动覆盖或使用自定义阈值
@@ -569,6 +569,15 @@ int RunStitchingPipeline(const StitchingParams* params) {
         // print_matrix("tile_weights (tiling_coeff)", coords.coeff);
         // print_matrix("global_y_img_pos", coords.y);
         // print_matrix("global_x_img_pos", coords.x);
+#ifdef FRMIS_BATCH_EXPORT_POSITIONS
+        for (int r = 0; r < height; ++r) {
+            for (int c = 0; c < width; ++c) {
+                const int x = static_cast<int>(std::round(coords.x[r][c])) - 1;
+                const int y = static_cast<int>(std::round(coords.y[r][c])) - 1;
+                std::cout << "TILE_POS," << img_name_grid[r][c] << ',' << x << ',' << y << '\n';
+            }
+        }
+#endif
         std::cout << "--------------------------------------------------------------\n\n";
 
         return 0;

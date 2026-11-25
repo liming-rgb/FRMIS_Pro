@@ -27,7 +27,6 @@ private:
     
     QSpinBox* widthSpin;
     QSpinBox* heightSpin;
-    QSpinBox* imgNumSpin;
     QComboBox* sortTypeCombo;
 
     QDoubleSpinBox* overlapWSpin;

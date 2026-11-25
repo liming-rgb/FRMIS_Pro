@@ -27,7 +27,6 @@ extern "C" {
         
         int width;                     // column count
         int height;                    // row count
-        int img_num;                   // total images (End)
         int sort_type;                 // 1 or 2
         int threshold_metric;          // SURF threshold
         

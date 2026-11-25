@@ -1,31 +1,156 @@
 #include "CanvasView.h"
+#include <QDragEnterEvent>
+#include <QFileInfo>
+#include <QGraphicsPixmapItem>
+#include <QImage>
+#include <QMimeData>
+#include <QPainter>
 #include <QScrollBar>
 #include <QGraphicsLineItem>
 #include <QPen>
+#include <QStyleOptionGraphicsItem>
+#include <QUrl>
+#include <algorithm>
+#include <array>
+#include <cmath>
+
+namespace {
+QString droppedFile(const QMimeData* data) {
+    const auto urls = data->urls();
+    if (urls.size() != 1 || !urls.first().isLocalFile()) {
+        return {};
+    }
+    const QString path = urls.first().toLocalFile();
+    return QFileInfo(path).isFile() ? path : QString();
+}
+}
+
+class CanvasView::DisplayPixmapItem final : public QGraphicsPixmapItem {
+public:
+    DisplayPixmapItem() {
+        setFlag(ItemUsesExtendedStyleOption);
+    }
+
+    void setDisplayAdjustments(int brightness, double contrast, double gamma) {
+        adjusted = brightness != 0 || contrast != 1.0 || gamma != 1.0;
+        if (adjusted) {
+            const double exponent = 1.0 / gamma;
+            for (int i = 0; i < 256; ++i) {
+                const double tone = std::pow(i / 255.0, exponent);
+                const double value = (tone - 0.5) * contrast + 0.5 + brightness / 100.0;
+                lookup[i] = qRound(std::clamp(value, 0.0, 1.0) * 255.0);
+            }
+        }
+        update();
+    }
+
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override {
+        if (!adjusted) {
+            QGraphicsPixmapItem::paint(painter, option, widget);
+            return;
+        }
+
+        // Apply the lookup table at screen resolution, including on high-DPI displays.
+        // The exposed rectangle limits work to the part of the mosaic being painted.
+        const QTransform itemToDevice = painter->deviceTransform();
+        const QRectF exposed = option->exposedRect.intersected(boundingRect());
+        if (exposed.isEmpty()) {
+            return;
+        }
+        const QRect area = itemToDevice.mapRect(exposed).toAlignedRect();
+        QImage preview(area.size(), QImage::Format_ARGB32);
+        if (preview.isNull()) {
+            QGraphicsPixmapItem::paint(painter, option, widget);
+            return;
+        }
+        preview.fill(Qt::transparent);
+        {
+            QPainter buffer(&preview);
+            buffer.setRenderHints(painter->renderHints());
+            buffer.setWorldTransform(itemToDevice * QTransform::fromTranslate(-area.x(), -area.y()));
+            QGraphicsPixmapItem::paint(&buffer, option, widget);
+        }
+
+        for (int y = 0; y < preview.height(); ++y) {
+            auto* row = reinterpret_cast<QRgb*>(preview.scanLine(y));
+            for (int x = 0; x < preview.width(); ++x) {
+                const QRgb pixel = row[x];
+                row[x] = qRgba(lookup[qRed(pixel)], lookup[qGreen(pixel)], lookup[qBlue(pixel)], qAlpha(pixel));
+            }
+        }
+
+        painter->save();
+        painter->resetTransform();
+        // The buffer already uses physical pixels, so remove device scaling for the blit.
+        painter->setWorldTransform(painter->deviceTransform().inverted());
+        painter->drawImage(area.topLeft(), preview);
+        painter->restore();
+    }
+
+private:
+    bool adjusted = false;
+    std::array<int, 256> lookup{};
+};
 
 CanvasView::CanvasView(QWidget* parent)
     : QGraphicsView(parent), gridEnabled(false), isPanMode(false) 
 {
     scene = new QGraphicsScene(this);
     setScene(scene);
-    pixmapItem = new QGraphicsPixmapItem();
+    pixmapItem = new DisplayPixmapItem();
     scene->addItem(pixmapItem);
     
     setBackgroundBrush(QBrush(QColor(20, 20, 20))); // 深灰色暗色视口
     setRenderHint(QPainter::Antialiasing);
     setRenderHint(QPainter::SmoothPixmapTransform);
     setDragMode(QGraphicsView::NoDrag);
+    setAcceptDrops(true);
+    viewport()->setAcceptDrops(true);
 }
 
-void CanvasView::setImage(const QImage& image) {
-    scene->clear();
-    pixmapItem = new QGraphicsPixmapItem(QPixmap::fromImage(image));
-    scene->addItem(pixmapItem);
+bool CanvasView::setImage(const QImage& image) {
+    const QPixmap pixmap = QPixmap::fromImage(image);
+    if (pixmap.isNull()) {
+        return false;
+    }
+    pixmapItem->setPixmap(pixmap);
     scene->setSceneRect(pixmapItem->boundingRect());
-    
-    gridLines.clear();
-    if (gridEnabled) {
-        drawGridOverlay();
+    return true;
+}
+
+void CanvasView::setDisplayAdjustments(int brightness, double contrast, double gamma) {
+    pixmapItem->setDisplayAdjustments(brightness, contrast, gamma);
+}
+
+void CanvasView::fitImageToView() {
+    resetTransform();
+    const QRectF bounds = pixmapItem->boundingRect();
+    if (bounds.width() > viewport()->width() || bounds.height() > viewport()->height()) {
+        fitInView(bounds, Qt::KeepAspectRatio);
+    }
+    centerOn(bounds.center());
+}
+
+void CanvasView::dragEnterEvent(QDragEnterEvent* event) {
+    if (!droppedFile(event->mimeData()).isEmpty()) {
+        event->setDropAction(Qt::CopyAction);
+        event->accept();
+    }
+}
+
+void CanvasView::dragMoveEvent(QDragMoveEvent* event) {
+    if (!droppedFile(event->mimeData()).isEmpty()) {
+        event->setDropAction(Qt::CopyAction);
+        event->accept();
+    }
+}
+
+void CanvasView::dropEvent(QDropEvent* event) {
+    const QString path = droppedFile(event->mimeData());
+    if (!path.isEmpty()) {
+        event->setDropAction(Qt::CopyAction);
+        event->accept();
+        emit imageFileDropped(path);
     }
 }
 

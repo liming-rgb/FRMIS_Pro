@@ -30,6 +30,13 @@ cv::Mat ImageBlender::blend(
     int img_width = tempI.cols;
     int img_channels = tempI.channels();
     int img_type = tempI.type();
+    const bool fillUncovered = img_type == CV_16UC1;
+    double background = std::numeric_limits<double>::infinity();
+    const auto updateBackground = [&background](const cv::Mat& image) {
+        double tileMin;
+        cv::minMaxLoc(image, &tileMin);
+        background = std::min(background, tileMin);
+    };
 
     // 2. Determine how big to make the canvas
     int max_x = 0;
@@ -76,6 +83,10 @@ cv::Mat ImageBlender::blend(
 
     if (method == "overlay") {
         cv::Mat canvas = cv::Mat::zeros(canvas_height, canvas_width, img_type);
+        cv::Mat uncovered;
+        if (fillUncovered) {
+            uncovered = cv::Mat(canvas_height, canvas_width, CV_8U, cv::Scalar(255));
+        }
         for (const auto& tile : tiles) {
             std::filesystem::path p = std::filesystem::path(source_directory) / img_name_grid[tile.r][tile.c];
             cv::Mat current_image = cv::imread(p.string(), cv::IMREAD_UNCHANGED);
@@ -86,6 +97,13 @@ cv::Mat ImageBlender::blend(
 
             cv::Rect roi(ox, oy, img_width, img_height);
             current_image.copyTo(canvas(roi));
+            if (fillUncovered) {
+                updateBackground(current_image);
+                uncovered(roi).setTo(0);
+            }
+        }
+        if (fillUncovered && std::isfinite(background)) {
+            canvas.setTo(background, uncovered);
         }
         return canvas;
     } else { // Linear Blending
@@ -115,6 +133,9 @@ cv::Mat ImageBlender::blend(
             std::filesystem::path p = std::filesystem::path(source_directory) / img_name_grid[tile.r][tile.c];
             cv::Mat current_image_raw = cv::imread(p.string(), cv::IMREAD_UNCHANGED);
             if (current_image_raw.empty()) continue;
+            if (fillUncovered) {
+                updateBackground(current_image_raw);
+            }
 
             cv::Mat current_image;
             current_image_raw.convertTo(current_image, CV_32F);
@@ -131,13 +152,15 @@ cv::Mat ImageBlender::blend(
             countsI(roi) += w_mat;
         }
 
-        // Avoid division by zero
-        cv::Mat mask = (countsI > 1e-10f);
         cv::Mat final_float = cv::Mat::zeros(acc.size(), acc.type());
         cv::divide(acc, countsI, final_float);
 
         cv::Mat canvas;
         final_float.convertTo(canvas, img_type);
+        if (fillUncovered && std::isfinite(background)) {
+            // A zero weight marks a gap even when covered pixels also have value zero.
+            canvas.setTo(background, countsI == 0);
+        }
         return canvas;
     }
 }

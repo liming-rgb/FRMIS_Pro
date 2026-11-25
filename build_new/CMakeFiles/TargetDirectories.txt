@@ -1,0 +1,5 @@
+D:/learning/strip_corrrection/FRMIS_Release/build_new/CMakeFiles/FRMIS_Release.dir
+D:/learning/strip_corrrection/FRMIS_Release/build_new/CMakeFiles/edit_cache.dir
+D:/learning/strip_corrrection/FRMIS_Release/build_new/CMakeFiles/rebuild_cache.dir
+D:/learning/strip_corrrection/FRMIS_Release/build_new/CMakeFiles/FRMIS_Release_autogen_timestamp_deps.dir
+D:/learning/strip_corrrection/FRMIS_Release/build_new/CMakeFiles/FRMIS_Release_autogen.dir

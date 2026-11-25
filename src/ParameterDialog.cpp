@@ -54,10 +54,8 @@ void ParameterDialog::setupUI() {
     QFormLayout* gridLayout = new QFormLayout(gridGroup);
     widthSpin = new QSpinBox(this); widthSpin->setRange(1, 100); widthSpin->setValue(3);
     heightSpin = new QSpinBox(this); heightSpin->setRange(1, 100); heightSpin->setValue(3);
-    imgNumSpin = new QSpinBox(this); imgNumSpin->setRange(1, 10000); imgNumSpin->setValue(9);
     gridLayout->addRow("网格列数 (Width):", widthSpin);
     gridLayout->addRow("网格行数 (Height):", heightSpin);
-    gridLayout->addRow("拼接图片总数:", imgNumSpin);
     
     sortTypeCombo = new QComboBox(this);
     sortTypeCombo->addItems(QStringList() << "1 - Tak/MIST 正常流" << "2 - Ashlar 倒序翻转流");
@@ -173,7 +171,6 @@ StitchingParams ParameterDialog::getParams() {
 
     p.width = widthSpin->value();
     p.height = heightSpin->value();
-    p.img_num = imgNumSpin->value();
     p.sort_type = (sortTypeCombo->currentIndex() == 0) ? 1 : 2;
     p.threshold_metric = thresholdSpin->value();
 

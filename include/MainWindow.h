@@ -3,8 +3,12 @@
 #include <QThread>
 #include <QLabel>
 #include <QProgressBar>
+#include <QElapsedTimer>
+#include <QImage>
 #include "CanvasView.h"
 #include "ParameterDialog.h"
+
+class QDockWidget;
 
 class StitchWorker : public QObject {
     Q_OBJECT
@@ -31,6 +35,7 @@ public:
 
 private slots:
     void onImportFolder();
+    void onImportImage();
     void onSaveAs();
     void onEditParameters();
     void onRunStitch();
@@ -47,8 +52,18 @@ private:
     QString m_resultPath; // Track stitched output path
     StitchingParams currentParams;
     std::vector<std::string> activeDirs;
-    
+
+    // Wall-clock timer started when the user hits "Run Stitching"; its elapsed
+    // time at the moment the image is actually on screen is the reported total.
+    QElapsedTimer m_runTimer;
+
     void createMenuBar();
     void createToolBar();
     void createStatusBar();
+    QDockWidget* createDisplayDock();
+
+    void previewImage(const QString& path);
+    // Pushes the image into the canvas and forces one synchronous repaint so the
+    // result is really on screen before any dialog opens. Returns false if drawing failed.
+    bool displayStitchedImage(const QImage& img);
 };

@@ -1,0 +1,3 @@
+D:\tools_app\CMake\bin\cmake.exe -E rm -f CMakeFiles\FRMIS_Release.dir/objects.a
+D:\tools_app\Qt\Tools\mingw1120_64\bin\ar.exe qc CMakeFiles\FRMIS_Release.dir/objects.a @CMakeFiles\FRMIS_Release.dir\objects1.rsp
+D:\tools_app\Qt\Tools\mingw1120_64\bin\c++.exe  -O3 -DNDEBUG -O3 -DNDEBUG  -s -s -mwindows -Wl,--whole-archive CMakeFiles\FRMIS_Release.dir/objects.a -Wl,--no-whole-archive -o FRMIS_Release.exe -Wl,--out-implib,libFRMIS_Release.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\FRMIS_Release.dir\linkLibs.rsp

@@ -5,10 +5,92 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QDockWidget>
+#include <QPushButton>
+#include <QSignalBlocker>
+#include <QSlider>
 #include <QFileInfo>
 #include <QFile>
+#include <QApplication>
+#include <QEventLoop>
+#include <QKeySequence>
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
+#include <limits>
 #include <opencv2/opencv.hpp>
+
+namespace {
+cv::Mat readImage(const QString& path) {
+    // Use direct decoding for ASCII paths, including large TIFFs. On Windows,
+    // QFile can also open paths containing characters outside the local code page.
+    const QByteArray encodedPath = path.toLatin1();
+    if (QString::fromLatin1(encodedPath) == path &&
+        std::none_of(encodedPath.cbegin(), encodedPath.cend(), [](unsigned char c) { return c >= 128; })) {
+        return cv::imread(encodedPath.constData(), cv::IMREAD_UNCHANGED);
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly) || file.size() <= 0 ||
+        file.size() > std::numeric_limits<int>::max()) {
+        return {};
+    }
+    auto* bytes = file.map(0, file.size());
+    if (!bytes) {
+        return {};
+    }
+    const cv::Mat buffer(1, static_cast<int>(file.size()), CV_8U, bytes);
+    return cv::imdecode(buffer, cv::IMREAD_UNCHANGED);
+}
+
+QImage loadDisplayImage(const QString& path) {
+    try {
+        const cv::Mat image = readImage(path);
+        if (!image.empty()) {
+            cv::Mat displayImage = image;
+            if (image.depth() != CV_8U) {
+                double minValue, maxValue;
+                cv::minMaxLoc(image.reshape(1), &minValue, &maxValue);
+                double scale = 255.0 / (maxValue > 0 ? maxValue : 1.0);
+                double offset = 0.0;
+                if (image.depth() == CV_16U) {
+                    const double range = maxValue - minValue;
+                    scale = range > 0 ? 255.0 / range : 1.0 / 256.0;
+                    offset = range > 0 ? -minValue * scale : 0.0;
+                }
+                if (image.channels() == 1) {
+                    QImage gray(image.cols, image.rows, QImage::Format_Grayscale8);
+                    if (gray.isNull()) {
+                        return {};
+                    }
+                    cv::Mat grayPixels(image.rows, image.cols, CV_8U, gray.bits(), gray.bytesPerLine());
+                    image.convertTo(grayPixels, CV_8U, scale, offset);
+                    return gray;
+                }
+                image.convertTo(displayImage, CV_8U, scale, offset);
+            }
+
+            if (displayImage.channels() == 1) {
+                return QImage(displayImage.data, displayImage.cols, displayImage.rows,
+                              displayImage.step, QImage::Format_Grayscale8).copy();
+            }
+            if (displayImage.channels() == 3) {
+                return QImage(displayImage.data, displayImage.cols, displayImage.rows,
+                              displayImage.step, QImage::Format_BGR888).copy();
+            }
+            if (displayImage.channels() == 4) {
+                cv::Mat rgba;
+                cv::cvtColor(displayImage, rgba, cv::COLOR_BGRA2RGBA);
+                return QImage(rgba.data, rgba.cols, rgba.rows, rgba.step, QImage::Format_RGBA8888).copy();
+            }
+        }
+    } catch (const cv::Exception&) {
+        // Also try Qt's installed image codecs if OpenCV cannot decode this file.
+    }
+    return QImage(path);
+}
+}
 
 StitchWorker::StitchWorker(const std::vector<std::string>& dirs, const StitchingParams& params)
     : m_dirs(dirs), m_params(params) {}
@@ -64,6 +146,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     canvas = new CanvasView(this);
     setCentralWidget(canvas);
+    connect(canvas, &CanvasView::imageFileDropped, this, &MainWindow::previewImage);
 
     paramDialog = new ParameterDialog(this);
     currentParams = paramDialog->getParams();
@@ -78,6 +161,8 @@ MainWindow::~MainWindow() {}
 
 void MainWindow::createMenuBar() {
     QMenu* fileMenu = menuBar()->addMenu("📂 File (文件)");
+    QAction* importImage = fileMenu->addAction("Open Image (导入图片)", this, &MainWindow::onImportImage);
+    importImage->setShortcut(QKeySequence::Open);
     fileMenu->addAction("Import Dataset (导入数据)", this, &MainWindow::onImportFolder);
     fileMenu->addAction("Save Stitched As (另存为)", this, &MainWindow::onSaveAs);
     fileMenu->addSeparator();
@@ -85,6 +170,7 @@ void MainWindow::createMenuBar() {
 
     QMenu* paramMenu = menuBar()->addMenu("⚙️ Parameters (参数)");
     paramMenu->addAction("Config Parameters (参数配置)", this, &MainWindow::onEditParameters);
+    paramMenu->addAction(createDisplayDock()->toggleViewAction());
 
     QMenu* runMenu = menuBar()->addMenu("⚡ Run (运行)");
     runMenu->addAction("Start Stitching (开始运行)", this, &MainWindow::onRunStitch);
@@ -95,10 +181,85 @@ void MainWindow::createMenuBar() {
     gridAct->setChecked(false);
 }
 
+QDockWidget* MainWindow::createDisplayDock() {
+    auto* dock = new QDockWidget("Display Settings (显示配置)", this);
+    dock->setObjectName("displaySettingsDock");
+    dock->setFeatures(QDockWidget::DockWidgetClosable);
+    dock->setAllowedAreas(Qt::RightDockWidgetArea);
+
+    auto* panel = new QWidget(dock);
+    panel->setMinimumWidth(220);
+    auto* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(14, 14, 14, 14);
+    layout->setSpacing(14);
+
+    const auto addSlider = [panel, layout](const QString& text, const QString& name,
+                                           const QString& tooltip, QLabel*& valueLabel) {
+        auto* slider = new QSlider(Qt::Horizontal, panel);
+        slider->setRange(-100, 100);
+        slider->setObjectName(name);
+        slider->setAccessibleName(text);
+        slider->setToolTip(tooltip);
+
+        auto* row = new QVBoxLayout;
+        row->setSpacing(4);
+        auto* header = new QHBoxLayout;
+        auto* label = new QLabel(text, panel);
+        label->setBuddy(slider);
+        valueLabel = new QLabel(panel);
+        header->addWidget(label);
+        header->addStretch();
+        header->addWidget(valueLabel);
+        row->addLayout(header);
+        row->addWidget(slider);
+        layout->addLayout(row);
+        return slider;
+    };
+
+    QLabel* brightnessReadout;
+    QLabel* contrastReadout;
+    QLabel* gammaReadout;
+    auto* brightness = addSlider("亮度", "brightnessSlider", "整体调亮或调暗", brightnessReadout);
+    auto* contrast = addSlider("对比度", "contrastSlider", "调整亮部和暗部的差异", contrastReadout);
+    auto* gamma = addSlider("Gamma", "gammaSlider", "向右提高 Gamma，提亮中间调", gammaReadout);
+    auto* reset = new QPushButton("重置显示", panel);
+    layout->addWidget(reset);
+    layout->addStretch();
+
+    const auto updateDisplay = [=] {
+        const int offset = brightness->value();
+        const double gain = std::exp2(contrast->value() / 50.0);
+        const double gammaValue = std::exp2(gamma->value() / 50.0);
+        brightnessReadout->setText(QString("%1%2%").arg(offset > 0 ? "+" : "").arg(offset));
+        contrastReadout->setText(QString("%1×").arg(gain, 0, 'f', 2));
+        gammaReadout->setText(QString::number(gammaValue, 'f', 2));
+        canvas->setDisplayAdjustments(offset, gain, gammaValue);
+    };
+    for (auto* slider : {brightness, contrast, gamma}) {
+        connect(slider, &QSlider::valueChanged, this, updateDisplay);
+    }
+    connect(reset, &QPushButton::clicked, this, [=] {
+        const QSignalBlocker blockBrightness(brightness);
+        const QSignalBlocker blockContrast(contrast);
+        const QSignalBlocker blockGamma(gamma);
+        brightness->setValue(0);
+        contrast->setValue(0);
+        gamma->setValue(0);
+        updateDisplay();
+    });
+    updateDisplay();
+
+    dock->setWidget(panel);
+    addDockWidget(Qt::RightDockWidgetArea, dock);
+    dock->hide();
+    return dock;
+}
+
 void MainWindow::createToolBar() {
     QToolBar* toolbar = addToolBar("Main Actions");
     toolbar->setMovable(false);
     
+    toolbar->addAction("🖼️ 导入图片", this, &MainWindow::onImportImage);
     toolbar->addAction("📂 导入目录", this, &MainWindow::onImportFolder);
     toolbar->addAction("⚙️ 配置参数", this, &MainWindow::onEditParameters);
     toolbar->addAction("▶️ 运行拼接", this, &MainWindow::onRunStitch);
@@ -106,7 +267,8 @@ void MainWindow::createToolBar() {
 }
 
 void MainWindow::createStatusBar() {
-    statusLabel = new QLabel("Ready | 当前拼接状态: 就绪", this);
+    statusLabel = new QLabel("就绪 · 可导入图片或将图片拖到画布", this);
+    statusLabel->setTextFormat(Qt::PlainText);
     progressBar = new QProgressBar(this);
     progressBar->setMaximumWidth(150);
     progressBar->setTextVisible(false);
@@ -115,6 +277,35 @@ void MainWindow::createStatusBar() {
 
     statusBar()->addWidget(statusLabel, 1);
     statusBar()->addPermanentWidget(progressBar);
+}
+
+void MainWindow::onImportImage() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, "导入图片 (Open Image)", {},
+        "Images (*.tif *.tiff *.png *.jpg *.jpeg *.bmp *.gif *.webp);;All files (*)");
+    if (!path.isEmpty()) {
+        previewImage(path);
+    }
+}
+
+void MainWindow::previewImage(const QString& path) {
+    const QString fileName = QFileInfo(path).fileName();
+    QElapsedTimer timer;
+    timer.start();
+    statusLabel->setText(QString("正在加载 %1…").arg(fileName));
+    statusLabel->repaint();
+
+    const QImage image = loadDisplayImage(path);
+    if (image.isNull() || !canvas->setImage(image)) {
+        statusLabel->setText(QString("无法显示图片 · %1").arg(fileName));
+        return;
+    }
+
+    canvas->setGrid(0, 0, 0, 0);
+    canvas->fitImageToView();
+    canvas->viewport()->repaint();
+    statusLabel->setText(QString("预览 · %1 · %2 × %3 px · 加载并显示 %4 s")
+        .arg(fileName).arg(image.width()).arg(image.height()).arg(timer.elapsed() / 1000.0, 0, 'f', 2));
 }
 
 void MainWindow::onImportFolder() {
@@ -148,7 +339,11 @@ void MainWindow::onRunStitch() {
     
     statusLabel->setText("Stitching pipeline running in background...");
     progressBar->setRange(0, 0); // Indeterminate marquee state
-    
+
+    // Timing starts here, i.e. at the moment the user presses "Run Stitching",
+    // so the reported duration also covers loading + rendering the result.
+    m_runTimer.start();
+
     QThread* thread = new QThread(this);
     StitchWorker* worker = new StitchWorker(activeDirs, currentParams);
     worker->moveToThread(thread);
@@ -171,65 +366,72 @@ void MainWindow::onStitchFinished(int status, QString resultPath, double elapsed
     progressBar->setRange(0, 100);
     progressBar->setValue(100);
 
-    if (status == 0) {
-        statusLabel->setText(QString("Stitching completed successfully in %1s!").arg(elapsedSeconds, 0, 'f', 2));
-        QMessageBox::information(this, "Success", QString("Image stitching completed successfully in %1 seconds!").arg(elapsedSeconds, 0, 'f', 2));
-        
-        m_resultPath = resultPath;
-        
-        // Load the stitched image using OpenCV for 100% robust TIFF compatibility (especially for 16-bit microscope images)
-        QImage img;
-        try {
-            cv::Mat mat = cv::imread(resultPath.toLocal8Bit().constData(), cv::IMREAD_UNCHANGED);
-            if (!mat.empty()) {
-                cv::Mat displayMat;
-                if (mat.depth() == CV_16U) {
-                    // Normalize/scale 16-bit to 8-bit for display, ensuring high contrast
-                    double minVal, maxVal;
-                    cv::minMaxLoc(mat, &minVal, &maxVal);
-                    if (maxVal - minVal > 0) {
-                        mat.convertTo(displayMat, CV_8U, 255.0 / (maxVal - minVal), -minVal * 255.0 / (maxVal - minVal));
-                    } else {
-                        mat.convertTo(displayMat, CV_8U, 1.0 / 256.0);
-                    }
-                } else if (mat.depth() == CV_8U) {
-                    displayMat = mat;
-                } else {
-                    double minVal, maxVal;
-                    cv::minMaxLoc(mat, &minVal, &maxVal);
-                    mat.convertTo(displayMat, CV_8U, 255.0 / (maxVal > 0 ? maxVal : 1.0));
-                }
-
-                if (displayMat.channels() == 1) {
-                    img = QImage(displayMat.data, displayMat.cols, displayMat.rows, displayMat.step, QImage::Format_Grayscale8).copy();
-                } else if (displayMat.channels() == 3) {
-                    cv::Mat rgbMat;
-                    cv::cvtColor(displayMat, rgbMat, cv::COLOR_BGR2RGB);
-                    img = QImage(rgbMat.data, rgbMat.cols, rgbMat.rows, rgbMat.step, QImage::Format_RGB888).copy();
-                } else if (displayMat.channels() == 4) {
-                    cv::Mat rgbaMat;
-                    cv::cvtColor(displayMat, rgbaMat, cv::COLOR_BGRA2RGBA);
-                    img = QImage(rgbaMat.data, rgbaMat.cols, rgbaMat.rows, rgbaMat.step, QImage::Format_RGBA8888).copy();
-                }
-            }
-        } catch (...) {
-            // Fallback to QImage native reader if OpenCV fails
-            img = QImage(resultPath);
-        }
-
-        if (!img.isNull()) {
-            canvas->setImage(img);
-            canvas->setGrid(currentParams.height, currentParams.width, 
-                            static_cast<float>(img.width()) / currentParams.width, 
-                            static_cast<float>(img.height()) / currentParams.height);
-        } else {
-            statusLabel->setText("Error: Failed to load stitched result image.");
-            QMessageBox::warning(this, "Load Error", "Stitched file was saved, but failed to load into viewer canvas.");
-        }
-    } else {
+    if (status != 0) {
         statusLabel->setText(QString("Stitching failed (Error code: %1)").arg(status));
         QMessageBox::critical(this, "Failed", QString("Stitching pipeline failed with code: %1").arg(status));
+        return;
     }
+
+    m_resultPath = resultPath;
+
+    // ---- 1) Load and DISPLAY the result first, before any dialog appears ----
+    statusLabel->setText("Stitching done - loading and rendering the result image... | 拼接完成，正在加载并渲染结果图...");
+    // Let the status text repaint before the (possibly slow) image load blocks the UI thread.
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
+    QImage img = loadDisplayImage(resultPath);
+    const bool displayed = displayStitchedImage(img);
+
+    // ---- 2) Stop the clock only once the image is actually on screen ----
+    // m_runTimer was started in onRunStitch(), i.e. when the user pressed Run.
+    const double totalSeconds  = m_runTimer.isValid() ? m_runTimer.elapsed() / 1000.0 : elapsedSeconds;
+    // elapsedSeconds comes from StitchWorker and covers the stitching pipeline only;
+    // whatever remains is the image loading + rendering + display time.
+    const double renderSeconds = qMax(0.0, totalSeconds - elapsedSeconds);
+
+    const QString stitchStr = QString::number(elapsedSeconds, 'f', 2);
+    const QString renderStr = QString::number(renderSeconds, 'f', 2);
+    const QString totalStr  = QString::number(totalSeconds, 'f', 2);
+
+    if (displayed) {
+        statusLabel->setText(QString("拼接完成 | 总用时 %1 s = 拼接 %2 s + 渲染显示 %3 s")
+                                 .arg(totalStr, stitchStr, renderStr));
+
+        QMessageBox::information(this, "拼接完成 (Stitching Complete)",
+            QString("图片拼接完成，结果显示在画布中。\n"
+                    "总用时：%1 秒（拼接 %2 秒 + 渲染显示 %3 秒）\n\n"
+                    "Stitching complete - the result is shown in the canvas.\n"
+                    "Total: %4 s (stitching %5 s + rendering/display %6 s)\n\n"
+                    "输出 / Output: %7")
+                .arg(totalStr, stitchStr, renderStr, totalStr, stitchStr, renderStr, m_resultPath));
+    } else {
+        statusLabel->setText(QString("Stitched file saved, but failed to display it (total %1 s).").arg(totalStr));
+        QMessageBox::warning(this, "Load Error",
+            QString("The stitched file was saved, but it could not be loaded into the viewer canvas.\n"
+                    "拼接文件已保存（总用时 %1 秒），但无法在画布中显示。")
+                .arg(totalStr));
+    }
+}
+
+bool MainWindow::displayStitchedImage(const QImage& img) {
+    try {
+        if (img.isNull() || !canvas->setImage(img)) {
+            return false;
+        }
+        if (currentParams.width > 0 && currentParams.height > 0) {
+            canvas->setGrid(currentParams.height, currentParams.width,
+                            static_cast<float>(img.width()) / currentParams.width,
+                            static_cast<float>(img.height()) / currentParams.height);
+        }
+    } catch (...) {
+        return false;
+    }
+
+    // Force one synchronous paint so the image is really on screen before the
+    // completion dialog opens; this paint time is part of the reported total.
+    canvas->viewport()->repaint();
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    return true;
 }
 
 void MainWindow::onToggleGridLines(bool checked) {
